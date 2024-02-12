@@ -16,8 +16,8 @@ EMAIL = "ferianc.martin@gmail.com"
 AUTHOR = "Martin Ferianc"
 REQUIRES_PYTHON = ">=3.9.0"
 VERSION = "0.0.1"
-LICENSE = "MIT"
-KEYWORDS = "supervised learning, neural networks, deep learning, machine learning, open-source software"
+LICENSE = "GNU GPLv3+"
+KEYWORDS = "machine learning, deep learning, python3, open source software"
 
 # What packages are required for this module to be executed?
 REQUIRED = [
@@ -45,10 +45,9 @@ REQUIRED = [
     "backpack-for-pytorch==1.6.0",
     "paretoset==1.2.3",
     "natsort==8.4.0",
-    "sphinx-hoverxref",
-    "sphinxext-opengraph",
-    "sphinx-paramlinks",
-    "pydata-sphinx-theme",
+    "gpytorch==1.11.0",
+    "syne-tune[basic]==0.10.0"
+    
 ]
 EXTRAS = {}
 DEV = []

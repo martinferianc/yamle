@@ -25,7 +25,5 @@ natsort==8.4.0
 backpack-for-pytorch==1.6.0
 paretoset==1.2.3
 natsort==8.4.0
-sphinx-hoverxref
-sphinxext-opengraph
-sphinx-paramlinks
-pydata-sphinx-theme
+gpytorch==1.11.0
+syne-tune[basic]==0.10.0

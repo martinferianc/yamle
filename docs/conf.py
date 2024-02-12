@@ -3,14 +3,14 @@ import os
 import shutil
 import sys
 
-sys.path.insert(0, os.path.abspath("../yamle/"))
+sys.path.insert(0, os.path.abspath(".."))
 
 import yamle
 
 
 def run_apidoc(app):
     """Generate doc stubs using sphinx-apidoc."""
-    module_dir = os.path.join(app.srcdir, "../yamle/")
+    module_dir = os.path.join(app.srcdir, "../")
     output_dir = os.path.join(app.srcdir, "_apidoc")
     excludes = []
 
@@ -45,7 +45,7 @@ def setup(app):
 
 
 # Sphinx configuration below.
-project = "YAMLE"
+project = "yamle"
 version = yamle.__version__
 release = yamle.__version__
 athor = "Martin Ferianc"
@@ -91,7 +91,7 @@ html_theme_options = {
     "icon_links": [
         {
             "name": "GitHub",
-            "url": "https://github.com/martinferianc/YAMLE",
+            "url": "https://github.com/martinferianc/yamle",
             "icon": "fa-brands fa-square-github",
             "type": "fontawesome",
         }
@@ -101,7 +101,7 @@ html_theme_options = {
 }
 html_context = {
     "github_user": "martinferianc",
-    "github_repo": "YAMLE",
+    "github_repo": "yamle",
     "github_version": "main",
     "doc_path": "docs",
     "default_mode": "light",

@@ -54,13 +54,13 @@ Core Components and Modules
 
 YAMLE is built on PyTorch and PyTorch Lightning and relies on torchmetrics for evaluation metrics and syne-tune for hyperparameter optimisation. The framework is designed to provide an ecosystem for rapid prototyping and experimentation. The core components and modules of YAMLE include:
 
-- :py:mod:`BaseDataModule <yamle.data.datamodule>`: Responsible for downloading, loading, and preprocessing data. It defines the task, data splitting, input/output dimensions, and more.
+- `BaseDataModule <https://yamle.readthedocs.io/en/latest/_apidoc/yamle.data.datamodule.html>`_: Responsible for downloading, loading, and preprocessing data. It defines the task, data splitting, input/output dimensions, and more.
 
-- :py:mod:`BaseModel <yamle.models.model>`: Defines the architecture of the model and its forward pass. It can be configured for different widths, depths, and activation functions.
+- `BaseModel <https://yamle.readthedocs.io/en/latest/_apidoc/yamle.models.model.html>`_: Defines the architecture of the model and its forward pass. It can be configured for different widths, depths, and activation functions.
 
-- :py:mod:`BaseMethod <yamle.methods.method>`: Defines the training, validation, and test steps, as well as the loss function, optimiser, and regularization. It can also incorporate pruning and quantisation during evaluation.
+- `BaseMethod <https://yamle.readthedocs.io/en/latest/_apidoc/yamle.methods.method.html>`_: Defines the training, validation, and test steps, as well as the loss function, optimiser, and regularization. It can also incorporate pruning and quantisation during evaluation.
 
-These components are orchestrated by the :py:mod:`BaseTrainer <yamle.trainers.trainer>` class, which is responsible for executing training and evaluation loops and running on a specific device platform. YAMLE facilitates end-to-end experiments, from data preprocessing to model training and evaluation, by allowing users to customise these components through command-line arguments.
+These components are orchestrated by the `BaseTrainer <https://yamle.readthedocs.io/en/latest/_apidoc/yamle.trainers.trainer.html>`_ class, which is responsible for executing training and evaluation loops and running on a specific device platform. YAMLE facilitates end-to-end experiments, from data preprocessing to model training and evaluation, by allowing users to customise these components through command-line arguments.
 
 Use Cases and Applications
 ---------------------------
@@ -68,7 +68,7 @@ Use Cases and Applications
 YAMLE is designed to serve as the template for the main project itself, allowing researchers and practitioners to conduct experiments, compare their models and methods, and easily extend the framework. The typical workflow for using YAMLE includes:
 
 1. Clone the YAMLE repository and install dependencies.
-2. Experiment with new methods or models by subclassing the :py:mod:`BaseModel <yamle.models.model>` or :py:mod:`BaseModel <yamle.models.model>` on the chosen :py:mod:`BaseDataModule <yamle.data.datamodule>` or any other customisable component.
+2. Experiment with new methods or models by subclassing the `BaseModel <https://yamle.readthedocs.io/en/latest/_apidoc/yamle.models.model.html>`_ or `BaseMethod <https://yamle.readthedocs.io/en/latest/_apidoc/yamle.methods.method.html>`_ on the chosen `BaseDataModule <https://yamle.readthedocs.io/en/latest/_apidoc/yamle.data.datamodule.html>`_ or any other customisable component.
 3. When satisfied with your additions, contribute them to the repository via a pull request.
 4. New additions will be reviewed and categorised as staple or experimental features, and YAMLE will be updated accordingly.
 

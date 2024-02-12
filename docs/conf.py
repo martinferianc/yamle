@@ -12,7 +12,7 @@ def run_apidoc(app):
     """Generate doc stubs using sphinx-apidoc."""
     module_dir = os.path.join(app.srcdir, "../")
     output_dir = os.path.join(app.srcdir, "_apidoc")
-    excludes = []
+    excludes = ["../setup.py"]
 
     # Ensure that any stale apidoc files are cleaned up first.
     if os.path.exists(output_dir):

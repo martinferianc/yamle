@@ -23,6 +23,8 @@ You can find the YAMLE repository on GitHub: `YAMLE Repository <https://github.c
 
 You can fint the short paper describing YAMLE: `arXiv paper <https://arxiv.org/abs/2402.06268>`_
 
+You can find the documentation at: `yamle.readthedocs.io <https://yamle.readthedocs.io/en/latest/>`_
+
 Table of Contents
 -----------------
 

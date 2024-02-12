@@ -1,9 +1,9 @@
 YAMLE (Yet Another Machine Learning Environment)
 ================================================
 
-.. image:: https://img.shields.io/badge/License-MIT-blue.svg
-  :target: https://opensource.org/licenses/MIT
-  :alt: License: MIT
+.. image:: https://img.shields.io/badge/license-GPLv3-blue
+  :target: https://opensource.org/licenses/GPL-3.0
+  :alt: License: GPLv3
 .. image:: https://img.shields.io/badge/Python-3.9-blue.svg
   :target: https://www.python.org/downloads/release/python-390/
   :alt: Python: 3.9
@@ -20,6 +20,8 @@ Overview
 YAMLE: Yet Another Machine Learning Environment is an open-source framework that facilitates rapid prototyping and experimentation with machine learning models and methods. The key motivation is to reduce repetitive work when implementing new approaches and improve reproducibility in ML research. YAMLE includes a command-line interface and integrations with popular and well-maintained PyTorch-based libraries to streamline training, hyperparameter optimisation, and logging. The ambition for YAMLE is to grow into a shared ecosystem where researchers and practitioners can quickly build on and compare existing implementations.
 
 You can find the YAMLE repository on GitHub: `YAMLE Repository <https://github.com/martinferianc/yamle>`_
+
+You can fint the short paper describing YAMLE: `arXiv paper <https://arxiv.org/abs/2402.06268>`_
 
 Table of Contents
 -----------------

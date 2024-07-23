@@ -46,8 +46,8 @@ REQUIRED = [
     "paretoset==1.2.3",
     "natsort==8.4.0",
     "gpytorch==1.11.0",
-    "syne-tune[basic]==0.10.0"
-    
+    "syne-tune[basic]==0.10.0",
+    "tensorboard>=2.17.0",
 ]
 EXTRAS = {}
 DEV = []

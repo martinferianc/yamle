@@ -14,9 +14,6 @@ For example, follow
     git clone https://github.com/martinferianc/yamle.git
     cd yamle
     pip install -e .
-    # Subsequently also install syne-tune - unfortunatelly installation in one go breaks for package tqdm
-    pip install 'syne-tune[extra]==0.10.0'
-    
 
 Afterwards you can try to run the example script:
 

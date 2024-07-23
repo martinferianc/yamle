@@ -15,6 +15,7 @@ from yamle.methods.mimo import (
     DataMUXMethod,
     UnMixMoMethod,
     MIMMOMethod,
+    SAEMethod,
     MixVitMethod,
 )
 from yamle.methods.pe import PEMethod
@@ -65,6 +66,7 @@ AVAILABLE_METHODS = {
     "random_erasing": RandomErasingImageClassificationMethod,
     "mimo": MIMOMethod,
     "mimmo": MIMMOMethod,
+    "sae": SAEMethod,
     "mixmo": MixMoMethod,
     "mixvit": MixVitMethod,
     "unmixmo": UnMixMoMethod,

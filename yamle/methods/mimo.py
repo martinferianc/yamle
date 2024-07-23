@@ -33,6 +33,10 @@ from yamle.defaults import (
     TEST_KEY,
     MEMBERS_DIM,
     INPUT_KEY,
+    MODULE_FLOPS_KEY,
+    MODULE_PARAMS_KEY,
+    MODULE_CUMULATIVE_FLOPS_KEY,
+    MODULE_CUMULATIVE_PARAMS_KEY,
     AVERAGE_WEIGHTS_KEY,
     MIN_TENDENCY,
 )
@@ -42,6 +46,7 @@ import argparse
 import logging
 import torchmetrics
 import copy
+import torch.nn.functional as F
 
 from yamle.utils.specific.mimo_experiments.plotting_utils import (
     plot_input_layer_norm_bar,
@@ -49,6 +54,7 @@ from yamle.utils.specific.mimo_experiments.plotting_utils import (
     plot_weight_trajectories,
     plot_overlap_between_members,
 )
+
 
 logging = logging.getLogger("pytorch_lightning")
 
@@ -62,7 +68,12 @@ class MIMOMethod(MemberMethod):
     Args:
         initialise_encoder_members_same (bool): Whether to initialise the members in the encoder with the same weights.
         num_batch_repetitions (int): The number of times some samples are repeated in the batch.
-        input_repetition_probability (Optional[float]): The probability that the inputs are identical for the ensemble members.
+        input_repetition_probability_value (Optional[float]): The probability that the inputs are identical for the ensemble members.
+        input_repetition_probability_start_value (float): The probability that the inputs are identical for the ensemble members.
+        input_repetition_probability_end_value (float): The probability that the inputs are identical for the ensemble members.
+        input_repetition_probability_start_epoch (int): The epoch at which the input repetition probability starts to increase.
+        input_repetition_probability_end_epoch (int): The epoch at which the input repetition probability reaches its maximum value.
+        input_repetition_probability_scheduler (str): The scheduler for the input repetition probability.
         repeat_evaluation (bool): Whether to repeat samples in the evaluation.
     """
 
@@ -70,7 +81,12 @@ class MIMOMethod(MemberMethod):
         self,
         initialise_encoder_members_same: bool = False,
         num_batch_repetitions: int = 1,
-        input_repetition_probability: Optional[float] = None,
+        input_repetition_probability_value: Optional[float] = None,
+        input_repetition_probability_start_value: float = 0.0,
+        input_repetition_probability_end_value: float = 1.0,
+        input_repetition_probability_start_epoch: int = 0,
+        input_repetition_probability_end_epoch: int = 100,
+        input_repetition_probability_scheduler: str = "linear",
         repeat_evaluation: bool = True,
         *args: Any,
         **kwargs: Any,
@@ -83,7 +99,27 @@ class MIMOMethod(MemberMethod):
         self._num_batch_repetitions = num_batch_repetitions
         self._initialise_encoder_members_same = initialise_encoder_members_same
 
-        self._input_repetition_probability = input_repetition_probability
+        if input_repetition_probability_value is not None:
+            input_repetition_probability_start_value = (
+                input_repetition_probability_value
+            )
+            input_repetition_probability_end_value = input_repetition_probability_value
+
+        scheduler_kwargs = {
+            "start_value": input_repetition_probability_start_value,
+            "end_value": input_repetition_probability_end_value,
+            "start_epoch": input_repetition_probability_start_epoch,
+            "end_epoch": input_repetition_probability_end_epoch,
+        }
+        if "powergrowth" in input_repetition_probability_scheduler:
+            scheduler_kwargs["power"] = float(
+                input_repetition_probability_scheduler.split("_")[-1]
+            )
+            input_repetition_probability_scheduler = "powergrowth"
+
+        self._input_repetition_scheduler = AVAILABLE_SCALAR_SCHEDULERS[
+            input_repetition_probability_scheduler
+        ](**scheduler_kwargs)
 
         # Remember all the input and output layer information.
         self._input_inputs_dim = None
@@ -194,7 +230,7 @@ class MIMOMethod(MemberMethod):
         main_shuffle = indices[torch.randperm(indices.shape[0])]
         to_shuffle = (
             torch.tensor(len(main_shuffle), device=main_shuffle.device).float()
-            * (1.0 - self._input_repetition_probability)
+            * (1.0 - self._input_repetition_scheduler.get_value())
         ).long()
         shuffle_indices = [
             torch.cat(
@@ -512,6 +548,13 @@ class MIMOMethod(MemberMethod):
     def on_train_epoch_end(self) -> None:
         """This method is called at the end of the training epoch."""
         super().on_train_epoch_end()
+        self.log(
+            "repetition_probability",
+            self._input_repetition_scheduler.get_value(),
+            on_step=False,
+            on_epoch=True,
+        )
+        self._input_repetition_scheduler.step()
         if self._plotting_training:
             self._plots()
 
@@ -524,6 +567,9 @@ class MIMOMethod(MemberMethod):
         state_dict[
             "output_layer_overlap_container"
         ] = self._output_layer_overlap_container
+        state_dict[
+            "input_repetition_scheduler"
+        ] = self._input_repetition_scheduler.state_dict()
         return state_dict
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
@@ -535,6 +581,9 @@ class MIMOMethod(MemberMethod):
         self._output_layer_overlap_container = state_dict[
             "output_layer_overlap_container"
         ]
+        self._input_repetition_scheduler.load_state_dict(
+            state_dict["input_repetition_scheduler"]
+        )
 
     @staticmethod
     def add_specific_args(
@@ -556,10 +605,40 @@ class MIMOMethod(MemberMethod):
             help="The number of times some samples are repeated in the batch.",
         )
         parser.add_argument(
-            "--method_input_repetition_probability",
+            "--method_input_repetition_probability_value",
+            type=float,
+            default=None,
+            help="The value to start the input repetition probability.",
+        )
+        parser.add_argument(
+            "--method_input_repetition_probability_start_value",
             type=float,
             default=0.0,
             help="The value to start the input repetition probability.",
+        )
+        parser.add_argument(
+            "--method_input_repetition_probability_end_value",
+            type=float,
+            default=0.0,
+            help="The value to end the input repetition probability.",
+        )
+        parser.add_argument(
+            "--method_input_repetition_probability_start_epoch",
+            type=int,
+            default=0,
+            help="The epoch at which to start the input repetition probability.",
+        )
+        parser.add_argument(
+            "--method_input_repetition_probability_end_epoch",
+            type=int,
+            default=100,
+            help="The epoch at which to end the input repetition probability.",
+        )
+        parser.add_argument(
+            "--method_input_repetition_probability_scheduler",
+            type=str,
+            default="linear",
+            help="The scheduler to use for the input repetition probability.",
         )
         parser.add_argument(
             "--method_repeat_evaluation",
@@ -575,7 +654,11 @@ class MIMMOMethod(MIMOMethod):
     """This class is the extension of the MIMO method in which we will try to find the depth for each ensemble member.
 
     Args:
-        alpha (float): The alpha value to regularize the depth loss term.
+        alpha_value (Optional[float]): The alpha value to regularize the depth loss term.
+        alpha_start_value (float): The alpha value start value to regularize the depth loss term.
+        alpha_end_value (float): The alpha value end value to regularize the depth loss term.
+        alpha_start_epoch (int): The epoch to start the alpha value from.
+        alpha_end_epoch (int): The epoch to end the alpha value.
         prior (str): The prior to use for the depth weights.
         do_not_optimize_depth_weights (bool): Whether to optimize the depth weights or not.
         additional_heads (bool): Whether to enable specific heads for each layer.
@@ -585,7 +668,11 @@ class MIMMOMethod(MIMOMethod):
 
     def __init__(
         self,
-        alpha: float = 1.0,
+        alpha_value: Optional[float] = None,
+        alpha_start_value: float = 0.0,
+        alpha_end_value: float = 1.0,
+        alpha_start_epoch: int = 0,
+        alpha_end_epoch: int = 100,
         prior: str = "uniform",
         do_not_optimize_depth_weights: bool = False,
         additional_heads: bool = False,
@@ -639,8 +726,23 @@ class MIMMOMethod(MIMOMethod):
                 "The model should not have a `_prior_depth_weights` attribute."
             )
 
-        assert alpha >= 0.0, f"The alpha value needs to be positive, got {alpha}."
-        self._alpha = alpha
+        if alpha_value is not None:
+            alpha_start_value = alpha_value
+            alpha_end_value = alpha_value
+
+        assert (
+            alpha_start_value >= 0.0
+        ), f"Alpha start value should be non-negative, got {alpha_start_value}."
+        assert (
+            alpha_end_value >= 0.0
+        ), f"Alpha end value should be non-negative, got {alpha_end_value}."
+
+        self._alpha_scheduler = LinearScalarScheduler(
+            start_value=alpha_start_value,
+            end_value=alpha_end_value,
+            start_epoch=alpha_start_epoch,
+            end_epoch=alpha_end_epoch,
+        )
 
         assert (
             warm_starting_epochs >= 0
@@ -779,12 +881,12 @@ class MIMMOMethod(MIMOMethod):
         # output[f"{LOSS_KEY}_individual"] = -loss.detach()/N_train
         output[f"{LOSS_KEY}_individual"] = -loss.detach()
         # output[f"{LOSS_KEY}_kl_depth"] = (
-        #    self._alpha * loss_kl_depth).detach()/N_train
+        #    self._alpha_scheduler.get_value() * loss_kl_depth).detach()/N_train
         output[f"{LOSS_KEY}_kl_depth"] = (
-            self._alpha * loss_kl_depth
+            self._alpha_scheduler.get_value() * loss_kl_depth
         ).detach()
 
-        loss = loss - self._alpha * loss_kl_depth
+        loss = loss - self._alpha_scheduler.get_value() * loss_kl_depth
         # loss = -loss/N_train
         loss = -loss
 
@@ -853,6 +955,10 @@ class MIMMOMethod(MIMOMethod):
         depth_weights = self._evaluation_depth_weights()
         logging.info(
             f"Depth weights at the end of training epoch: {depth_weights}")
+        self.log(
+            "alpha", self._alpha_scheduler.get_value(), on_step=False, on_epoch=True
+        )
+        self._alpha_scheduler.step()
         self._depth_weight_container = torch.cat(
             (self._depth_weight_container, depth_weights.unsqueeze(0).detach().cpu()),
             dim=0,
@@ -863,25 +969,50 @@ class MIMMOMethod(MIMOMethod):
         """A helper method to save the weights of the ensemble."""
         state_dict = super().state_dict()
         state_dict["depth_weight_container"] = self._depth_weight_container
+        state_dict["alpha_scheduler"] = self._alpha_scheduler.state_dict()
         return state_dict
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
         """A helper method to load the weights of the ensemble."""
         super().load_state_dict(state_dict)
         self._depth_weight_container = state_dict["depth_weight_container"]
+        self._alpha_scheduler.load_state_dict(state_dict["alpha_scheduler"])
 
     @staticmethod
     def add_specific_args(
         parent_parser: argparse.ArgumentParser,
     ) -> argparse.ArgumentParser:
-        """The method to add additional arguments."""
         parser = super(MIMMOMethod, MIMMOMethod).add_specific_args(
             parent_parser)
         parser.add_argument(
-            "--method_alpha",
+            "--method_alpha_value",
             type=float,
-            default=1.0,
-            help="The alpha value.",
+            default=None,
+            help="The starting value for alpha.",
+        )
+        parser.add_argument(
+            "--method_alpha_start_value",
+            type=float,
+            default=0.0,
+            help="The starting value for alpha.",
+        )
+        parser.add_argument(
+            "--method_alpha_end_value",
+            type=float,
+            default=0.0,
+            help="The ending value for alpha.",
+        )
+        parser.add_argument(
+            "--method_alpha_start_epoch",
+            type=int,
+            default=0,
+            help="The starting epoch for alpha.",
+        )
+        parser.add_argument(
+            "--method_alpha_end_epoch",
+            type=int,
+            default=0,
+            help="The ending epoch for alpha.",
         )
         parser.add_argument(
             "--method_prior",
@@ -914,6 +1045,471 @@ class MIMMOMethod(MIMOMethod):
             type=int,
             default=0,
             help="The number of epochs to warm start the model.",
+        )
+        return parser
+
+
+class SAEMethod(MIMMOMethod):
+    """This class implements upgrades to the MIMMOMethod class.
+
+    It implements sampling from the Gumbel-Softmax distribution for the depth weights with respect to
+    top k chosen depths with a parameter k and a temperature parameter that can be annealed.
+
+    Args:
+        k (int): The number of depths to sample from.
+        temperature_value (Optional[float]): The value for the temperature.
+        temperature_start_value (float): The starting value for the temperature.
+        temperature_end_value (float): The ending value for the temperature.
+        temperature_start_epoch (int): The starting epoch for the temperature.
+        temperature_end_epoch (int): The ending epoch for the temperature.
+    """
+
+    def __init__(
+        self,
+        k: float = 1,
+        temperature_value: Optional[float] = None,
+        temperature_start_value: float = 1,
+        temperature_end_value: float = 1,
+        temperature_start_epoch: int = 0,
+        temperature_end_epoch: int = 0,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        if k is None:
+            k = self._depth
+        k = max(1, min(k, self._depth))
+        if temperature_value is not None:
+            temperature_start_value = temperature_value
+            temperature_end_value = temperature_value
+        assert k >= 1 and k <= self._depth, f"k must be between 1 and {self._depth}."
+        assert (
+            temperature_start_value > 0 and temperature_end_value > 0
+        ), f"Temperature must be positive."
+        self._k = k
+        self._temperature_scheduler = LinearScalarScheduler(
+            start_value=temperature_start_value,
+            end_value=temperature_end_value,
+            start_epoch=temperature_start_epoch,
+            end_epoch=temperature_end_epoch,
+        )
+
+    def on_train_epoch_end(self) -> None:
+        """This method is run at the end of the training epoch."""
+        self.log(
+            "alpha", self._alpha_scheduler.get_value(), on_step=False, on_epoch=True
+        )
+        self._alpha_scheduler.step()
+        self.log(
+            "temperature",
+            self._temperature_scheduler.get_value(),
+            on_step=False,
+            on_epoch=True,
+        )
+        self._temperature_scheduler.step()
+        # Call the grandparent method
+        super(MIMMOMethod, self).on_train_epoch_end()
+
+    def on_validation_epoch_end(self) -> None:
+        """This method is run at the end of the validation epoch."""
+        super().on_validation_epoch_end()
+        # This will already select the weights for the top k depths
+        depth_weights = self._depth_weights
+        logging.info(
+            f"Depth weights at the end of validation epoch: {depth_weights}")
+        self._depth_weight_container = torch.cat(
+            (self._depth_weight_container, depth_weights.unsqueeze(0).detach().cpu()),
+            dim=0,
+        )
+
+    def on_test_epoch_end(self) -> None:
+        """This method is run at the end of the test epoch."""
+        super().on_test_epoch_end()
+        # Print the depth weights
+        logging.info(
+            f"Depth weights at the end of test epoch: {self._depth_weights}")
+
+    def _loss_kl_depth_weights(self) -> torch.Tensor:
+        """This method computes the KL divergence loss for the depth weights."""
+        if (
+            self.current_epoch < self._warm_starting_epochs
+            or self._do_not_optimize_depth_weights
+        ):
+            return torch.tensor(0.0, device=self.device)
+        depth_weights = torch.softmax(
+            self.model._depth_weights
+            / (self._temperature_scheduler.get_value() + TINY_EPSILON),
+            dim=0,
+        )
+        return torch.sum(
+            depth_weights
+            * torch.log(
+                depth_weights / (self._prior_depth_weights + TINY_EPSILON)
+                + TINY_EPSILON
+            )
+        )
+
+    def _train_depth_weights(self) -> torch.Tensor:
+        """This method computes depth weights for training."""
+
+        def _gumbel(logits: torch.Tensor) -> torch.Tensor:
+            """Draw a sample from the Gumbel-Softmax distribution."""
+            u = torch.rand(
+                logits.shape, device=logits.device
+            )  # uniform distribution in PyTorch
+            z = -torch.log(-torch.log(u + TINY_EPSILON) + TINY_EPSILON)
+            return logits + z
+
+        def continuous_topk_sampled_mask(
+            logits: torch.Tensor, top_k: int = 0, temperature: float = 0.0
+        ) -> torch.Tensor:
+            logits = _gumbel(logits)
+            # zero tensor with the same shape as logits
+            khot = torch.zeros_like(logits)
+            onehot_approx = torch.zeros_like(
+                logits
+            )  # zero tensor with the same shape as logits
+            for _ in range(top_k):
+                khot_mask = torch.max(
+                    1.0 - onehot_approx,
+                    TINY_EPSILON * torch.ones_like(onehot_approx),
+                )  # max operation with a tensor full of TINY_EPSILON values
+                logits += torch.log(khot_mask)
+                onehot_approx = F.softmax(
+                    logits / (temperature + TINY_EPSILON), dim=0
+                )  # PyTorch's softmax function
+                # adding tensors in PyTorch
+                khot = torch.add(khot, onehot_approx)
+            return khot
+
+        depth_weights = self.model._depth_weights
+        depth_weights = continuous_topk_sampled_mask(
+            depth_weights,
+            top_k=self._k,
+            temperature=self._temperature_scheduler.get_value(),
+        )
+        return depth_weights
+
+    def _evaluation_depth_weights(self) -> torch.Tensor:
+        """This method computes depth weights for evaluation."""
+        # Select the top k depths in the 0th dimension and for these depths preserve the depth weights
+        # the others set to -inf and then apply the softmax
+        depth_weights = self.model._depth_weights
+        top_k_depths = torch.topk(depth_weights, self._k, dim=0).indices
+        mask = torch.zeros_like(depth_weights).bool()
+        mask.scatter_(0, top_k_depths, True)
+        depth_weights = torch.where(
+            mask, depth_weights, torch.full_like(depth_weights, -float("inf"))
+        )
+        depth_weights = torch.softmax(
+            depth_weights /
+            (self._temperature_scheduler.get_value() + TINY_EPSILON),
+            dim=0,
+        )
+        # Weights which are smaller than 0.001 are also set to 0
+        depth_weights = torch.where(
+            depth_weights < 0.001,
+            torch.full_like(depth_weights, 0.0),
+            depth_weights,
+        )
+        return depth_weights
+
+    @property
+    def _depth_weights(self) -> torch.Tensor:
+        """This method returns the depth weights in the step function."""
+        if (
+            self.current_epoch < self._warm_starting_epochs and self.training
+        ) or self._do_not_optimize_depth_weights:
+            return self._prior_depth_weights
+
+        if not self.training:
+            return self._evaluation_depth_weights()
+        else:
+            return self._train_depth_weights()
+
+    def state_dict(self) -> Dict[str, Any]:
+        """This method saves the state of the method."""
+        state_dict = super().state_dict()
+        state_dict["temperature_scheduler"] = self._temperature_scheduler.state_dict()
+        return state_dict
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """This method loads the state of the method."""
+        super().load_state_dict(state_dict)
+        self._temperature_scheduler.load_state_dict(
+            state_dict["temperature_scheduler"])
+
+    def _create_metrics(self, metrics_kwargs: Dict[str, Any]) -> None:
+        """This method creates the metrics for the method."""
+        super()._create_metrics(metrics_kwargs)
+
+        self._add_additional_metrics(
+            {
+                "flops": torchmetrics.MeanMetric(),  # This is for the real count
+                "params": torchmetrics.MeanMetric(),  # This is for the real count
+            },
+            tendencies=[MIN_TENDENCY, MIN_TENDENCY],
+        )
+
+    def _step(
+        self,
+        batch: List[torch.Tensor],
+        batch_idx: int,
+        optimizer_idx: Optional[int] = None,
+        phase: str = TRAIN_KEY,
+        num_members: Optional[int] = None,
+    ) -> Dict[str, torch.Tensor]:
+        """A helper method to perform a single step whether training, validation or test.
+
+        In this case it also computes the FLOPs and parameter counts for the regularisation,
+        as well as the real FLOPs and parameter counts.
+        """
+        output = super()._step(
+            batch=batch,
+            batch_idx=batch_idx,
+            optimizer_idx=optimizer_idx,
+            phase=phase,
+            num_members=num_members,
+        )
+        if phase == TEST_KEY and batch_idx == 0:
+            flops, params = self._flops_and_params()
+            output["flops"] = flops
+            output["params"] = params
+        return output
+
+    def _flops_and_params(
+        self,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """This is a helper function which calculates the real FLOPs and Parameter counts."""
+        # Check if the cumulative FLOPs and parameters are already computed
+        if not hasattr(self.model._output, MODULE_CUMULATIVE_FLOPS_KEY):
+            return (
+                torch.tensor(0.0, device=self.device),
+                torch.tensor(0.0, device=self.device),
+            )
+
+        def _linear_flops_and_params(
+            input_dim: int, output_dim: int, bias: bool = True, num_members: int = 1
+        ) -> Tuple[int, int]:
+            """This is a helper function which calculates the FLOPs and Parameter counts for a linear layer."""
+            flops = input_dim * output_dim * num_members
+            params = flops + output_dim * num_members if bias else flops
+            flops += output_dim * num_members if bias else 0
+            return flops, params
+
+        def _inactive_flops_params(
+            level_depth_weights: torch.Tensor,
+            input_dim: int,
+            output_dim: int,
+            bias: bool = True,
+        ) -> Tuple[int, int]:
+            """This is a helper function which calculates the exact inactive FLOPs and Parameter counts for a linear layer.
+
+            This depends on how many outputs are active and inactive at that depth.
+            """
+            num_active_outputs = sum(
+                [1 for x in level_depth_weights if x > 0.001])
+            num_inactive_outputs = len(
+                level_depth_weights) - num_active_outputs
+            inactive_flops, inactive_params = _linear_flops_and_params(
+                input_dim, output_dim, bias=bias, num_members=num_inactive_outputs
+            )
+            return inactive_flops, inactive_params
+
+        # Collect all the cumulative/non-cumulative FLOPs and parameters across all the heads
+        depth_weights = self._evaluation_depth_weights()
+        flops, params = 0, 0
+
+        # Sum the depth weights across the members
+        summed_depth_weights = torch.sum(depth_weights, dim=1)
+
+        offset = 0
+        # This is the dimension of the output with 1 member
+        default_output_dim = self._output_outputs_dim
+        # This is the dimension of the input with 1 member
+        default_input_dim = self._output_inputs_dim
+        last_depth = 0
+        for i in range(len(self._available_heads)):
+            if not self._available_heads[i]:
+                offset += 1
+                continue
+            if i < len(self._available_heads) - 1:
+                if (
+                    summed_depth_weights[i] < 0.001
+                ):  # That depth is not active and 0.001 is chosen arbitrarily for numerics
+                    continue
+                # Get all the FLOPs and parameters up to that depth
+                flops = getattr(
+                    self.model._heads[i - offset], MODULE_CUMULATIVE_FLOPS_KEY
+                )
+                params = getattr(
+                    self.model._heads[i - offset], MODULE_CUMULATIVE_PARAMS_KEY
+                )
+                # Check that both flops and params are whole numbers
+                assert (
+                    isinstance(flops, int) or flops.is_integer()
+                ), f"FLOPs should be a whole number, got {flops}."
+                assert (
+                    isinstance(params, int) or params.is_integer()
+                ), f"Parameters should be a whole number, got {params}."
+                # Calculate the inactive FLOPs and parameters for that head
+                # By default the FLOPs and params include also inactive outputs
+                inactive_flops, inactive_params = _inactive_flops_params(
+                    depth_weights[i],
+                    default_input_dim,
+                    default_output_dim,
+                    # The first layer of the head is the Linear prediction layer
+                    bias=self.model._heads[i - \
+                                           offset]._modules["0"].bias is not None,
+                )
+                assert (
+                    isinstance(inactive_flops,
+                               int) or inactive_flops.is_integer()
+                ), f"FLOPs should be a whole number, got {inactive_flops}."
+                assert (
+                    isinstance(inactive_params,
+                               int) or inactive_params.is_integer()
+                ), f"Parameters should be a whole number, got {inactive_params}."
+                flops -= inactive_flops
+                params -= inactive_params
+            else:
+                # This is for the last depth which is the default exit of the network
+                if summed_depth_weights[i] < 0.001:
+                    continue
+
+                # Get all the FLOPs and parameters up to that depth
+                flops = getattr(self.model._output,
+                                MODULE_CUMULATIVE_FLOPS_KEY)
+                params = getattr(self.model._output,
+                                 MODULE_CUMULATIVE_PARAMS_KEY)
+                assert (
+                    isinstance(flops, int) or flops.is_integer()
+                ), f"FLOPs should be a whole number, got {flops}."
+                assert (
+                    isinstance(params, int) or params.is_integer()
+                ), f"Parameters should be a whole number, got {params}."
+
+                inactive_flops, inactive_params = _inactive_flops_params(
+                    depth_weights[i],
+                    default_input_dim,
+                    default_output_dim,
+                    bias=self.model._output._modules["0"].bias is not None,
+                )
+                assert (
+                    isinstance(inactive_flops,
+                               int) or inactive_flops.is_integer()
+                ), f"FLOPs should be a whole number, got {inactive_flops}."
+                assert (
+                    isinstance(inactive_params,
+                               int) or inactive_params.is_integer()
+                ), f"Parameters should be a whole number, got {inactive_params}."
+
+                flops -= inactive_flops
+                params -= inactive_params
+            # Update the last depth, the if statements with continue ensure that the last depth is the
+            # last active depth
+            last_depth = i
+
+        # Now accumulate the flops and params for the early exits
+        offset = 0
+        for i in range(last_depth):
+            if i == len(self._available_heads) - 1:
+                # These FLOPs and params are already accumulated, this is the default exit
+                # of the network
+                continue
+
+            if not self._available_heads[i]:
+                # The head was not available by default
+                offset += 1
+                continue
+
+            if summed_depth_weights[i] < 0.001:
+                # The head is inactive, can be completely ignored
+                continue
+
+            # The head is active, so we need to add the flops and params of the reshaping layer
+            reshaping_layer_flops = getattr(
+                self.model._reshaping_layers[i - offset], MODULE_FLOPS_KEY
+            )
+            heads_flops = getattr(
+                self.model._heads[i - offset], MODULE_FLOPS_KEY)
+            reshaping_layer_params = getattr(
+                self.model._reshaping_layers[i - offset], MODULE_PARAMS_KEY
+            )
+            heads_params = getattr(
+                self.model._heads[i - offset], MODULE_PARAMS_KEY)
+            inactive_flops, inactive_params = _inactive_flops_params(
+                depth_weights[i],
+                default_input_dim,
+                default_output_dim,
+                bias=self.model._heads[i -
+                                       offset]._modules["0"].bias is not None,
+            )
+
+            assert (
+                isinstance(reshaping_layer_flops, int)
+                or reshaping_layer_flops.is_integer()
+            ), f"FLOPs should be a whole number, got {reshaping_layer_flops}."
+            assert (
+                isinstance(heads_flops, int) or heads_flops.is_integer()
+            ), f"FLOPs should be a whole number, got {heads_flops}."
+            assert (
+                isinstance(reshaping_layer_params, int)
+                or reshaping_layer_params.is_integer()
+            ), f"Parameters should be a whole number, got {reshaping_layer_params}."
+            assert (
+                isinstance(heads_params, int) or heads_params.is_integer()
+            ), f"Parameters should be a whole number, got {heads_params}."
+
+            flops += reshaping_layer_flops + heads_flops - inactive_flops
+            params += reshaping_layer_params + heads_params - inactive_params
+
+        return (
+            torch.tensor(flops, device=self.device),
+            torch.tensor(params, device=self.device),
+        )
+
+    @staticmethod
+    def add_specific_args(
+        parent_parser: argparse.ArgumentParser,
+    ) -> argparse.ArgumentParser:
+        """This method adds specific arguments for the method."""
+        parser = super(SAEMethod, SAEMethod).add_specific_args(parent_parser)
+        parser.add_argument(
+            "--method_temperature_value",
+            type=float,
+            default=None,
+            help="The value for the temperature.",
+        )
+        parser.add_argument(
+            "--method_k",
+            type=int,
+            default=None,
+            help="The number of depths to sample from.",
+        )
+        parser.add_argument(
+            "--method_temperature_start_value",
+            type=float,
+            default=1,
+            help="The starting value for the temperature.",
+        )
+        parser.add_argument(
+            "--method_temperature_end_value",
+            type=float,
+            default=0.01,
+            help="The ending value for the temperature.",
+        )
+        parser.add_argument(
+            "--method_temperature_start_epoch",
+            type=int,
+            default=0,
+            help="The starting epoch for the temperature.",
+        )
+        parser.add_argument(
+            "--method_temperature_end_epoch",
+            type=int,
+            default=0,
+            help="The ending epoch for the temperature.",
         )
         return parser
 

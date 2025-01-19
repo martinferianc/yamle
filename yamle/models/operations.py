@@ -37,8 +37,7 @@ def output_activation(
         )
         # Clamp the values between -50 and 50.
         x = torch.clamp(x, min=-50, max=50)
-        # Cast to float64 to avoid numerical issues.
-        x = torch.softmax(x, dim=dim, dtype=torch.float64)
+        x = torch.softmax(x, dim=dim, dtype=torch.float32)
         # Clamp the probabilities between TINY_EPSILON and 1+TINY_EPSILON.
         x = torch.nan_to_num(
             x, nan=TINY_EPSILON, posinf=TINY_EPSILON, neginf=TINY_EPSILON

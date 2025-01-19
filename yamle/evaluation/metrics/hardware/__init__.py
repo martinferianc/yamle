@@ -221,14 +221,14 @@ def model_complexity(
     elif torch.cuda.is_available():
         # If no devices are specified but cuda is available, use cuda:0
         devices = ["cuda:0"]
-    elif devices is None:
+    elif devices is None or isinstance(devices, int):
         devices = []
 
     devices.append("cpu")
     times = []
     device_descriptions = []
     original_device = next(model.parameters()).device
-    """
+    
     with torch.no_grad():
         for device in devices:
             # Move the model to the device
@@ -252,7 +252,7 @@ def model_complexity(
                 else platform.processor()
             )
     model.to(original_device)
-    """
+    
     # Store all the results from the different libraries in the results dictionary
     # Store the results in the dictionary
     if results is not None:

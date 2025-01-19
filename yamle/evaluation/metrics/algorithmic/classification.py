@@ -799,7 +799,7 @@ class ClassConditionalCalibrationError(torchmetrics.Metric):
         bin_indices = torch.bucketize(probabilities, self.bins)
         n_bins = self.bins.numel() - 1
         sums = torch.bincount(bin_indices.cpu(), weights=probabilities.cpu(), minlength=n_bins).to(probabilities.device)
-        sums = sums.type(torch.float64)
+        sums = sums.type(torch.float32)
         counts = torch.bincount(bin_indices.cpu(), minlength=n_bins).to(probabilities.device)
         counts = counts + TINY_EPSILON
         
